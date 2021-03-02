@@ -113,6 +113,10 @@
                     :label (tr "auth.password")
                     :type "password"}]]
 
+     [:div.input-checkbox.check-primary
+      [:input {:type "checkbox" :id "terms-privacy"}]
+      [:label {:for "terms-privacy"} "When creating a new account, you agree to our terms of service and privacy policy."]]
+
      [:& fm/submit-button
       {:label (tr "auth.register-submit")
        :disabled @submitted?

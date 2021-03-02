@@ -63,6 +63,14 @@
     form {
       margin: 2rem 0;
     }
+
+    .input-checkbox {
+      margin-bottom: $big;
+      
+      label {
+        color: $color-gray-40;
+      }
+    }
   }
 
   .btn-google-auth {
