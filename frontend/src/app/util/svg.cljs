@@ -224,7 +224,7 @@
 (defn format-rotate-params [params]
   (assert (or (= (count params) 1) (= (count params) 3)) (str "??" (count params)))
   (if (= (count params) 1)
-    [(nth params 0)]
+    [(nth params 0) (gpt/point 0 0)]
     [(nth params 0) (gpt/point (nth params 1) (nth params 2))]))
 
 (defn format-skew-x-params [params]
@@ -291,3 +291,69 @@
                   (dissoc :points)
                   (assoc :d (str (points->path (:points attrs)) "Z")))]
     (assoc node :attrs attrs :tag tag)))
+
+(defn add-transform [attrs transform]
+  (letfn [(append-transform [old-transform]
+            (if (or (nil? old-transform) (empty? old-transform))
+              transform
+              (str transform " " old-transform)))]
+
+    (cond-> attrs
+      transform
+      (update :transform append-transform))))
+
+(def inheritable-props
+  [:clip-rule
+   :color
+   :color-interpolation
+   :color-interpolation-filters
+   :color-profile
+   :color-rendering
+   :cursor
+   :direction
+   :dominant-baseline
+   :fill
+   :fill-opacity
+   :fill-rule
+   :font
+   :font-family
+   :font-size
+   :font-size-adjust
+   :font-stretch
+   :font-style
+   :font-variant
+   :font-weight
+   :glyph-orientation-horizontal
+   :glyph-orientation-vertical
+   :image-rendering
+   :letter-spacing
+   :marker
+   :marker-end
+   :marker-mid
+   :marker-start
+   :paint-order
+   :pointer-events
+   :shape-rendering
+   :stroke
+   :stroke-dasharray
+   :stroke-dashoffset
+   :stroke-linecap
+   :stroke-linejoin
+   :stroke-miterlimit
+   :stroke-opacity
+   :stroke-width
+   :text-anchor
+   :text-rendering
+   :transform
+   :visibility
+   :word-spacing
+   :writing-mode])
+
+(defn inherit-attributes [group-attrs {:keys [attrs] :as node}]
+  (if (map? node)
+    (let [attrs (-> (format-styles attrs)
+                    (add-transform (:transform group-attrs)))
+          attrs (d/deep-merge (select-keys group-attrs inheritable-props) attrs)]
+      (assoc node :attrs attrs))
+    node))
+

@@ -89,7 +89,7 @@
       shape)))
 
 (defn create-raw-svg [name frame-id svg-data {:keys [attrs] :as data}]
-  (let [{:keys [x y width height]} svg-data]
+  (let [{:keys [x y width height offset-x offset-y]} svg-data]
     (-> {:id (uuid/next)
          :type :svg-raw
          :name name
@@ -101,7 +101,8 @@
          :content (cond-> data
                     (map? data) (update :attrs usvg/clean-attrs))}
         (assoc :svg-attrs attrs)
-        (assoc :svg-viewbox (select-keys svg-data [0 0 :width :height]))
+        (assoc :svg-viewbox (-> (select-keys svg-data [:width :height])
+                                (assoc :x offset-x :y offset-y)))
         (gsh/setup-selrect))))
 
 (defn create-svg-root [frame-id svg-data]
@@ -128,8 +129,9 @@
          :y (+ y offset-y)
          :width width
          :height height}
-        (assoc :svg-attrs (dissoc attrs :transform))
-        (assoc :svg-viewbox (select-keys svg-data [:x :y :width :height]))
+        (assoc :svg-attrs (d/without-keys attrs usvg/inheritable-props))
+        (assoc :svg-viewbox (-> (select-keys svg-data [:width :height])
+                                (assoc :x offset-x :y offset-y)))
         (gsh/setup-selrect))))
 
 (defn create-path-shape [name frame-id svg-data {:keys [attrs] :as data}]
@@ -261,16 +263,6 @@
         (assoc :svg-viewbox (select-keys rect [:x :y :width :height]))
         (assoc :svg-attrs (dissoc attrs :cx :cy :r :rx :ry :transform)))))
 
-(defn add-transform [transform node]
-  (letfn [(append-transform [old-transform]
-            (if (or (nil? old-transform) (empty? old-transform))
-              transform
-              (str old-transform " " transform)))]
-
-    (cond-> node
-      transform
-      (update-in [:attrs :transform] append-transform))))
-
 (defn parse-svg-element [frame-id svg-data element-data unames]
   (let [{:keys [tag attrs]} element-data
         attrs (usvg/format-styles attrs)
@@ -286,14 +278,17 @@
         use-tag? (and (= :use tag) (contains? defs href-id))]
 
     (if use-tag?
+      ;; TODO: If the child is a symbol we've to take the width/height into account
       (let [use-data (get defs href-id)
-            translate (gpt/point (:x attrs 0) (:y attrs 0))
-            attrs' (dissoc attrs :x :y :width :height :href :xlink:href)
-            ;; TODO: If the child is a symbol we've to take the width/height into account
-            use-data (update use-data :attrs #(let [attrs (usvg/format-styles %)]
-                                                (d/deep-merge attrs' attrs)))
-            [shape children] (parse-svg-element frame-id svg-data use-data unames)]
-        [(-> shape (gsh/move translate)) children])
+
+            displacement (gpt/point (d/parse-double (:x attrs "0")) (d/parse-double (:y attrs "0")))
+            disp-matrix (str (gmt/translate-matrix displacement))
+            element-data (-> element-data
+                             (assoc :tag :g)
+                             (update :attrs dissoc :x :y :width :height :href :xlink:href)
+                             (update :attrs usvg/add-transform disp-matrix)
+                             (assoc :content [use-data]))]
+        (parse-svg-element frame-id svg-data element-data unames))
       
       ;; SVG graphic elements
       ;; :circle :ellipse :image :line :path :polygon :polyline :rect :text :use
@@ -313,7 +308,8 @@
 
             children (cond->> (:content element-data)
                        (= tag :g)
-                       (mapv #(add-transform (:transform attrs) %)))]
+                       (mapv #(usvg/inherit-attributes attrs %))
+                       #_(mapv #(usvg/add-transform (:transform attrs) %)))]
         [shape children]))))
 
 (defn add-svg-child-changes [page-id objects selected frame-id parent-id svg-data [unames [rchs uchs]] [index data]]
@@ -371,14 +367,14 @@
               root-shape (create-svg-root frame-id svg-data)
               root-id (:id root-shape)
 
-              changes (dwc/add-shape-changes page-id objects selected root-shape)
+              changes (dwc/add-shape-changes page-id objects selected root-shape false)
 
               reducer-fn (partial add-svg-child-changes page-id objects selected frame-id root-id svg-data)
               [_ [rchanges uchanges]] (reduce reducer-fn [unames changes] (d/enumerate (:content svg-data)))
 
               reg-objects-action {:type :reg-objects
                                   :page-id page-id
-                                  :shapes (->> rchanges (map :id) (remove nil?) (into #{root-id}) vec)}
+                                  :shapes (->> rchanges (filter #(= :add-obj (:type %))) (map :id) reverse vec)}
 
               rchanges (conj rchanges reg-objects-action)]
 

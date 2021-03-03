@@ -15,6 +15,7 @@ const plugins = [
     { "convertShapeToPath" : false },
     { "convertEllipseToCircle" : false },
     { "moveElemsAttrsToGroup" : false },
+    { "moveGroupAttrsToElems" : false },
     { "collapseGroups" : false },
     {
         "convertPathData" : {
